@@ -71,7 +71,7 @@ router.get('/file', auth, async (req, res) => {
             return res.status(404).send()
         }
 
-        res.send(file.url)
+        res.send([ file.url ])
     } catch (e) {
         res.status(500).send()
     }

@@ -18,9 +18,9 @@ const s3 = new AWS.S3({
 
 const listFolders = async (directory) => {
     const listedObjects = await s3.listObjectsV2({ Delimiter: '/', Prefix: directory }).promise()
-
-    if (listedObjects.Contents.length === 0) {
-        return { error: 'Directory does not exist!' }
+    
+    if (listedObjects.CommonPrefixes.length === 0) {
+        return { error: 'Folder is empty!' }
     }
     const folders = []
     listedObjects.CommonPrefixes.forEach(({ Prefix }) => {
