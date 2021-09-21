@@ -1,18 +1,26 @@
+/**
+ * This file includes router about file
+ */
+
 const express = require('express')
 const { listFolders, createFolder, listFiles, uploadFile, deleteFile, emptyDirectory } = require('./utils/s3')
+const { decode } = require('./utils/pathModifier');
 const upload = require('./utils/upload')
 const auth = require('../middleware/auth')
 const File = require('../models/file')
 
 const router = new express.Router()
 
-// Upload file
+/**
+ * Upload file.
+ * Requirement: file and directory
+ */
 router.post('/file', auth, upload.single('file'), async (req, res) => {
     if (!req.file || req.body.directory === undefined) {
         return res.status(400).send()
     }
 
-    const directory = req.user._id + '/' + req.body.directory
+    const directory = req.user._id + '/' + req.body.directory.trim()
     const file = req.file.buffer
     file.name = req.file.originalname
     
@@ -32,23 +40,26 @@ router.post('/file', auth, upload.single('file'), async (req, res) => {
 
         res.send(fileData)
     } catch (e) {
-        res.status(500).send(e)
+        res.status(500).send(e.message)
     }
 }, (error, req, res, next) => {
     res.status(400).send({ error: error.message })
 })
 
-// List files and folders in folder
-router.get('/file/directory', auth, async (req, res) => {
+/**
+ * List files and folders in directory
+ * Requirement: directory
+ */
+router.get('/file/list', auth, async (req, res) => {
     // directory field not provided
-    if (req.body.directory === undefined) {
+    if (req.query.directory === undefined) {
         return res.status(400).send()
     }
 
     try {
-        const fileList = await listFiles(req.user._id + '/' + req.body.directory)
+        const fileList = await listFiles(req.user._id + '/' + decode(req.query.directory))
 
-        if (fileList.length === 0) {
+        if (fileList.length === 0 && req.query.directory !== '') {
             return res.status(404).send({ error: 'Directory not exist' })
         }
 
@@ -58,15 +69,18 @@ router.get('/file/directory', auth, async (req, res) => {
     }
 })
 
-// Get file link
-router.get('/file', auth, async (req, res) => {
+/**
+ * Get file link
+ * Requirement: directory and filename
+ */
+router.get('/file/link', auth, async (req, res) => {
     // filepath not provided
-    if (req.body.directory === undefined || req.body.filename === undefined) {
+    if (req.query.directory === undefined || req.query.filename === undefined) {
         return res.status(400).send()
     }
     
     try {
-        const file = await File.findOne({ directory: req.body.directory, filename: req.body.filename, owner: req.user._id })
+        const file = await File.findOne({ directory: decode(req.query.directory), filename: req.query.filename, owner: req.user._id })
         if (!file) {
             return res.status(404).send()
         }
@@ -77,14 +91,17 @@ router.get('/file', auth, async (req, res) => {
     }
 })
 
-// List folders
+/**
+ * List folders in directory
+ * Requirement: directory
+ */
 router.get('/file/folders', auth, async (req, res) => {
-    if (req.body.directory === undefined) {
+    if (req.query.directory === undefined) {
         return res.status(400).send()
     }
 
     try {
-        const folders = await listFolders(req.user._id + '/' + req.body.directory)
+        const folders = await listFolders(req.user._id + '/' + decode(req.query.directory))
         if (folders.error) {
             return res.status(404).send(folders.error)
         }
@@ -94,7 +111,10 @@ router.get('/file/folders', auth, async (req, res) => {
     }
 })
 
-// Create folder
+/**
+ * Create folder
+ * Requirement: directory and folderName
+ */
 router.post('/file/folders', auth, async (req, res) => {
     // directory or folderName not provided
     if (req.body.directory === undefined || req.body.folderName === undefined) {
@@ -102,7 +122,7 @@ router.post('/file/folders', auth, async (req, res) => {
     }
 
     try {
-        createFolder(req.user._id + '/' + req.body.directory, req.body.folderName, (err) => {
+        createFolder(req.user._id + '/' + req.body.directory.trim(), req.body.folderName, (err) => {
             if (err) {
                 return res.status(400).send(err)
             }
@@ -113,14 +133,19 @@ router.post('/file/folders', auth, async (req, res) => {
     }    
 })
 
-// Delete file or folder
+/**
+ * Delete file or empty folder
+ * Requirement: directory and filename
+ */
 router.delete('/file', auth, async (req, res) => {
     // directory or folderName not provided
-    if (req.body.directory === undefined || req.body.filename === undefined) {
+    if (req.query.directory === undefined || req.query.filename === undefined) {
         return res.status(400).send()
     }
 
-    const filepath = req.user._id + '/' + req.body.directory + req.body.filename
+    const directory = decode(req.query.directory).trim()
+    const filename = decode(req.query.filename)
+    const filepath = req.user._id + '/' + directory + filename
 
     try {
         const deletionError = await deleteFile(filepath)
@@ -130,8 +155,8 @@ router.delete('/file', auth, async (req, res) => {
         }
 
         // If it is a file, delete data from database
-        if (!req.body.filename.endsWith('/')) {
-            const deletedFile = await File.findOneAndDelete({ directory: req.body.directory, filename: req.body.filename, owner: req.user._id })
+        if (!filename.endsWith('/')) {
+            const deletedFile = await File.findOneAndDelete({ directory, filename, owner: req.user._id });
             if (!deletedFile) {
                 return res.status(404).send()
             }
@@ -144,27 +169,30 @@ router.delete('/file', auth, async (req, res) => {
     }
 })
 
-// Empty directory
+/**
+ * Delete folder and its contents recursively
+ * Requirement: directory
+ */
 router.delete('/file/directory', auth, async (req, res) => {
     // directory field not provided
-    if (req.body.directory === undefined) {
-        return res.status(400).send()
+    if (req.query.directory === undefined) {
+        return res.status(400).send();
     }
 
     try {
-        const filelist = await emptyDirectory(req.user._id + '/' + req.body.directory)
+        const filelist = await emptyDirectory(req.user._id + '/' + decode(req.query.directory).trim());
         // directory not exist
         if (filelist.error) {
-            return res.status(404).send(filelist)
+            return res.status(404).send(filelist);
         }
         
         // If it is a file, delete data from database
         filelist.forEach(async (key) => {
-            key = key.replace(req.user._id + '/', '')
-            const divisionIndex = key.lastIndexOf('/')
-            const directory = key.substring(0, divisionIndex+1)
-            const filename = key.substring(divisionIndex+1, key.length+1)
-            const file = await File.findOneAndDelete({ directory, filename, owner: req.user._id })
+            key = key.replace(req.user._id + '/', '');
+            const divisionIndex = key.lastIndexOf('/');
+            const directory = key.substring(0, divisionIndex+1);
+            const filename = key.substring(divisionIndex+1, key.length+1);
+            const file = await File.findOneAndDelete({ directory, filename, owner: req.user._id });
 
             if (!file) {
                 return res.status(404).send()
@@ -177,9 +205,14 @@ router.delete('/file/directory', auth, async (req, res) => {
     }
 })
 
-// List all files of user
-// GET /file/me?limit=10&skip=10
-// GET /file/me?sortBy=createdAt:desc
+/**
+ * List all files of user.
+ * Options: limit, skip, sortBy, tag
+ * 
+ * Examples
+ * GET /file/me?limit=10&skip=10
+ * GET /file/me?sortBy=createdAt:desc
+ */
 router.get('/file/me', auth, async (req, res) => {
     const sort = {}
     if (req.query.sortBy) {
@@ -206,7 +239,5 @@ router.get('/file/me', auth, async (req, res) => {
         res.status(500).send(e)
     }
 })
-
-// TODO: list public files
 
 module.exports = router

@@ -1,3 +1,7 @@
+/**
+ * This tests scenarios of image router
+ */
+
 const request = require('supertest')
 const app = require('../src/app')
 const File = require('../src/models/file')
@@ -5,7 +9,7 @@ const { userOneId, userOne, setupDatabase } = require('./fixtures/db')
 const { emptyDirectory } = require('../src/routers/utils/s3')
 
 beforeEach(async () => {
-    await emptyDirectory('')
+    await emptyDirectory(userOne._id + '/')
     await setupDatabase()
     await request(app)
         .post('/file')
@@ -18,6 +22,11 @@ beforeEach(async () => {
         .attach('file', 'tests/fixtures/sample-script.bash')
         .field('directory', 'test1/test1-1/')
 })
+
+/**
+ * File uploading scenarios below.
+ * POST: /file
+ */
 
 test('Should upload file for user', async () => {
     const response = await request(app)
@@ -41,13 +50,17 @@ test('Should upload file for user', async () => {
     expect(file).not.toBeNull()
 })
 
+
+/**
+ * Folder list fetching scenarios below.
+ * GET: /file/folders
+ */
+
 test('Should fetch folders in directory', async () => {
     const response = await request(app)
-        .get('/file/folders')
+        .get('/file/folders?directory=test1%')
         .set('Authorization', `Bearer ${userOne.tokens[0].token}`)
-        .send({
-            directory: 'test1/'
-        })
+        .send()
         .expect(200)
 
     expect(response.body.length).toEqual(1)
@@ -55,13 +68,16 @@ test('Should fetch folders in directory', async () => {
 
 test('Should not fetch folders for nonexistent directory', async () => {
     await request(app)
-        .get('/file/folders')
+        .get('/file/folders?directory=non-exist%')
         .set('Authorization', `Bearer ${userOne.tokens[0].token}`)
-        .send({
-            directory: 'non-exist/'
-        })
+        .send()
         .expect(404)
 })
+
+/**
+ * Folder creation scenarios below.
+ * POST: /file/folders
+ */
 
 test('Should create folder for user', async () => {
     await request(app)
@@ -74,9 +90,14 @@ test('Should create folder for user', async () => {
         .expect(201)
 })
 
+/**
+ * File deletion scenarios below.
+ * DELETE: /file
+ */
+
 test('Should delete file for user', async () => {
     const response = await request(app)
-        .delete('/file')
+        .delete('/file?directory=test1%test1-1%&filename=test_text.txt')
         .set('Authorization', `Bearer ${userOne.tokens[0].token}`)
         .send({
             directory: "test1/test1-1/",
@@ -100,22 +121,22 @@ test('Should delete file for user', async () => {
 
 test('Should not delete file if it does not exist', async () => {
     await request(app)
-        .delete('/file')
+        .delete('/file?directory=test1%test1-1%&filename=non-existent.png')
         .set('Authorization', `Bearer ${userOne.tokens[0].token}`)
-        .send({
-            directory: "test1/test1-1/",
-            filename: "non-existent.txt"
-        })
+        .send()
         .expect(400)
 })
 
+/**
+ * File list fetching scenarios below.
+ * GET: /file/list
+ */
+
 test('Should fetch files in directory for user', async () => {
     const response = await request(app)
-        .get('/file/directory')
+        .get('/file/list?directory=test1%test1-1%')
         .set('Authorization', `Bearer ${userOne.tokens[0].token}`)
-        .send({
-            directory: "test1/test1-1/"
-        })
+        .send()
         .expect(200)
 
     expect(response.body.length).toEqual(2)
@@ -123,7 +144,7 @@ test('Should fetch files in directory for user', async () => {
 
 test('Should not fetch files in nonexistent directory', async () => {
     await request(app)
-        .get('/file/directory')
+        .get('/file/list?directory=non-exist%')
         .set('Authorization', `Bearer ${userOne.tokens[0].token}`)
         .send({
             directory: "test1/non-existent/"
@@ -131,13 +152,16 @@ test('Should not fetch files in nonexistent directory', async () => {
         .expect(404)
 })
 
+/**
+ * Directory deletion scenarios below.
+ * DELETE: /file/directory
+ */
+
 test('Should empty directory for user', async () => {
     const response = await request(app)
-        .delete('/file/directory')
+        .delete('/file/directory?directory=test1%')
         .set('Authorization', `Bearer ${userOne.tokens[0].token}`)
-        .send({
-            directory: "test1/"
-        })
+        .send()
         .expect(200)
 
     const files = await File.find({
@@ -149,22 +173,22 @@ test('Should empty directory for user', async () => {
 
 test('Should not empty nonexistent directory', async () => {
     await request(app)
-        .delete('/file/directory')
+        .delete('/file/directory?directory=non-exist%')
         .set('Authorization', `Bearer ${userOne.tokens[0].token}`)
-        .send({
-            directory: "non-existent/"
-        })
+        .send()
         .expect(404)
 })
 
+/**
+ * File URL link fetching scenarios below.
+ * GET: /file/link
+ */
+
 test('Should get url link of file for user', async () => {
     const response = await request(app)
-        .get('/file')
+        .get('/file/link?directory=test1%test1-1%&filename=test_text.txt')
         .set('Authorization', `Bearer ${userOne.tokens[0].token}`)
-        .send({
-            directory: "test1/test1-1/",
-            filename: "test_text.txt"
-        })
+        .send()
         .expect(200)
 
     expect(response.body[0]).toEqual(expect.any(String))
@@ -172,14 +196,16 @@ test('Should get url link of file for user', async () => {
 
 test('Should not get link of nonexistent file', async () => {
     await request(app)
-        .get('/file')
+        .get('/file/link?directory=test1%test1-1%&filename=non-existent.jpg')
         .set('Authorization', `Bearer ${userOne.tokens[0].token}`)
-        .send({
-            directory: "test1/test1-1/",
-            filename: "non-existent.jpg"
-        })
+        .send()
         .expect(404)
 })
+
+/**
+ * All user images fetching with options scenarios below.
+ * GET: /image/me
+ */
 
 test('Should fetch all files of user', async () => {
     const response = await request(app)
